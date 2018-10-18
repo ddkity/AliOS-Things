@@ -26,10 +26,10 @@
 #define EVENT_ERROR_OUTPUT_INFO_IDENTIFIER "ErrorCode"
 
 // for demo only
-#define PRODUCT_KEY     "a1X2bEnP82z"
-#define PRODUCT_SECRET  "7jluWm1zql7bt8qK"
-#define DEVICE_NAME     "test_06"
-#define DEVICE_SECRET   "wQ1xOzFH3kLdjCTLfi8Xbw4otRz0lHoq"
+#define PRODUCT_KEY     "a1r3HsGSRlJ"
+#define PRODUCT_SECRET  "HuKXRGD6Bbm4vei5"
+#define DEVICE_NAME     "rfsmartDevice"
+#define DEVICE_SECRET   "31gEDrsmC4NauQ9FHCYtMlRSr4w8D9j1"
 
 
 #define EXAMPLE_TRACE(fmt, ...)                        \
@@ -50,7 +50,7 @@ typedef struct _sample_context {
 /*
  * the callback of linkkit_post_property.
  * response_id is compare with the result of linkkit_post_property.
- *
+ * huangjituan 上传属性的时候好像并没有回调这个函数
  */
 void post_property_cb(const void *thing_id, int response_id, int code,
                       const char *response_message, void *ctx)
@@ -312,7 +312,7 @@ static int thing_call_service(const void *thing_id, const char *service,
     return 0;
 }
 
-
+#if 0
 /*
  * the handler of property changed
  * alink method: thing.service.property.set
@@ -465,6 +465,50 @@ static int thing_prop_changed(const void *thing_id, const char *property,
 
     return 0;
 }
+#endif
+
+/*
+ * the handler of property changed
+ * alink method: thing.service.property.set
+ */
+static int thing_prop_changed(const void *thing_id, const char *property,
+                              void *ctx)
+{
+    /* do user's property changed process logical here. */
+
+    /* ............................... */
+
+    /* user's property changed process logical complete */
+
+
+    /*
+     * example:
+     *     property identifier:
+     *               IndoorTemperature
+     *               TemperatureModelStatus
+     *               CurrentTemperature
+     *
+     * please follow TSL modify this property identifier
+     */
+
+    /* if the proprety id is %s.%s, please follow this code */
+    /* get new property value */
+
+    int SetValue;
+    char *value_str        = NULL;
+    int   response_id      = -1;
+
+    linkkit_get_value(linkkit_method_get_property_value, thing_id, property, &SetValue, &value_str);
+    if (value_str) {
+        free(value_str);
+        value_str = NULL;
+    }
+    response_id = linkkit_post_property(thing_id, property, post_property_cb);
+
+    EXAMPLE_TRACE("post property(%s) response id: %d\n", property, response_id);
+    EXAMPLE_TRACE("huangjituan=======>%s set to %d\n", property, SetValue);
+
+}
 
 
 /* there is some data transparent transmission by linkkit */
@@ -540,8 +584,8 @@ static int post_property_wifi_status_once(sample_context_t *sample_ctx)
     int   rx_rate = 0;
 
     if (is_active(sample_ctx) && 0 == is_post) {
-        get_wireless_info(&wireless_info);  
-#ifdef WIFI_AWSS_ENABLED              
+        get_wireless_info(&wireless_info);
+#ifdef WIFI_AWSS_ENABLED
         HAL_Wifi_Get_Ap_Info(NULL, NULL, bssid);
 #endif
 
@@ -680,7 +724,7 @@ int linkkit_example()
      * if get_tsl_from_cloud = 0, it will use the default tsl [TSL_STRING]; if
      * get_tsl_from_cloud =1, it will get tsl from cloud.
      */
-    if (-1 == linkkit_start(16, get_tsl_from_cloud, linkkit_loglevel_debug,
+    if (-1 == linkkit_start(16, get_tsl_from_cloud, linkkit_loglevel_warning,
                             &linkkit_ops, linkkit_cloud_domain_shanghai,
                             &sample_ctx)) {
         EXAMPLE_TRACE("linkkit start fail");
@@ -728,11 +772,13 @@ int linkkit_example()
             linkkit_invoke_cota_get_config("product","file","",NULL);
         } */
 
+#if 0
 #ifdef POST_WIFI_STATUS
         if (now % 10 == 0) {
             post_property_wifi_status_once(&sample_ctx);
         }
 #endif
+
         if (now % 30 == 0 && is_active(&sample_ctx)) {
             post_all_prop(&sample_ctx);
         }
@@ -746,7 +792,7 @@ int linkkit_example()
             trigger_deviceinfo(&sample_ctx);
         }
 #endif
-
+#endif
         if (exit) {
             break;
         }

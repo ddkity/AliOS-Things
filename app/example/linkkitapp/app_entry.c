@@ -94,6 +94,9 @@ static void cloud_service_event(input_event_t *event, void *priv_data)
  * user should post one task to do this, not implement complex operation in
  * linkkit_event_monitor
  */
+extern unsigned char WIFISetNetworkFlash;
+extern unsigned char CurWiFiStatus;
+extern void ClearWifiInfo(void *p);
 
 static void linkkit_event_monitor(int event)
 {
@@ -101,13 +104,16 @@ static void linkkit_event_monitor(int event)
         case IOTX_AWSS_START: // AWSS start without enbale, just supports device
                               // discover
             // operate led to indicate user
+            CurWiFiStatus = 0x00;
             LOG("IOTX_AWSS_START");
             break;
         case IOTX_AWSS_ENABLE: // AWSS enable
             LOG("IOTX_AWSS_ENABLE");
             // operate led to indicate user
+            WIFISetNetworkFlash = 1;
             break;
         case IOTX_AWSS_LOCK_CHAN: // AWSS lock channel(Got AWSS sync packet)
+            CurWiFiStatus = 0x01;
             LOG("IOTX_AWSS_LOCK_CHAN");
             // operate led to indicate user
             break;
@@ -147,6 +153,7 @@ static void linkkit_event_monitor(int event)
             break;
         case IOTX_AWSS_CONNECT_ROUTER_FAIL: // AWSS fails to connect destination
                                             // router.
+            CurWiFiStatus = 0x00;
             LOG("IOTX_AWSS_CONNECT_ROUTER_FAIL");
             // operate led to indicate user
             break;
@@ -162,10 +169,12 @@ static void linkkit_event_monitor(int event)
             break;
         case IOTX_AWSS_BIND_NOTIFY: // AWSS sends out bind notify information to
                                     // support bind between user and device
+            /* 设备绑定成功处理函数 TODO */
             LOG("IOTX_AWSS_BIND_NOTIFY");
             // operate led to indicate user
             break;
         case IOTX_CONN_CLOUD: // Device try to connect cloud
+            CurWiFiStatus = 0x02;
             LOG("IOTX_CONN_CLOUD");
             // operate led to indicate user
             break;
@@ -175,11 +184,13 @@ static void linkkit_event_monitor(int event)
             // operate led to indicate user
             break;
         case IOTX_CONN_CLOUD_SUC: // Device connects cloud successfully
+            CurWiFiStatus = 0x03;
             LOG("IOTX_CONN_CLOUD_SUC");
             // operate led to indicate user
             break;
         case IOTX_RESET: // Linkkit reset success (just got reset response from
                          // cloud without any other operation)
+            aos_post_delayed_action(2000, ClearWifiInfo, NULL);
             LOG("IOTX_RESET");
             // operate led to indicate user
             break;
@@ -293,7 +304,7 @@ int application_start(int argc, char **argv)
     aos_set_log_level(AOS_LL_DEBUG);
 
     netmgr_init();
-    aos_register_event_filter(EV_KEY, linkkit_key_process, NULL);
+    //aos_register_event_filter(EV_KEY, linkkit_key_process, NULL); /* huangjituan 按键处理函数，没有按键不需要，激活配网的时候输入命令active_awss即可 */
     aos_register_event_filter(EV_WIFI, wifi_service_event, NULL);
     aos_register_event_filter(EV_YUNIO, cloud_service_event, NULL);
 

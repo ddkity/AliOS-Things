@@ -69,7 +69,7 @@ static void hal_wlan_init()
 	//setup reconnection flag
 	wifi_set_autoreconnect(RTW_AUTORECONNECT_INFINITE);
 #endif
-	printf("\n\r%s(%d), Available heap 0x%x", __FUNCTION__, __LINE__, rtw_getFreeHeapSize());	
+	printf("\n\r%s(%d), Available heap 0x%x", __FUNCTION__, __LINE__, rtw_getFreeHeapSize());
 #endif
 }
 
@@ -102,7 +102,7 @@ static void board_mode_check(void)
     hal_gpio_init(&gpio_key_boot);
     uint32_t boot;
     hal_gpio_input_get(&gpio_key_boot, &boot);
-    
+
     gpio_dev_t gpio_key_elink;
     gpio_key_elink.port = KEY_ELINK;
     gpio_key_elink.config = INPUT_PULL_UP;
@@ -113,8 +113,6 @@ static void board_mode_check(void)
     printf("--------------------------------> built at "__DATE__" "__TIME__"\r\n");
     hal_gpio_input_get(&gpio_key_boot, &boot);
     printf("--------------------------------> boot %d, elink %d \r\n", boot, elink);
-
-
 
     if(boot == 0)
     {
@@ -146,7 +144,7 @@ void sys_init_func(void)
 
     hal_wlan_init();
 
-        
+
     board_cli_init();
 
 #ifdef USE_MX1290
@@ -158,12 +156,15 @@ void sys_init_func(void)
     krhino_task_dyn_del(NULL);
 }
 
+//ktask_t *g_uart1_init;
+//extern void uarthandler_func(void);
 void main(void)
 {
     aos_init();
 
     krhino_task_dyn_create(&g_aos_init, "aos-init", 0, AOS_DEFAULT_APP_PRI , 0, AOS_START_STACK, (task_entry_t)sys_init_func, 1);
-    
+    //krhino_task_dyn_create(&g_uart1_init, "g_uart1_init", 0, AOS_DEFAULT_APP_PRI , 0, 1024, (task_entry_t)uarthandler_func, 1);
+
     SysTick_Config(SystemCoreClock/RHINO_CONFIG_TICKS_PER_SECOND);
 
     aos_start();

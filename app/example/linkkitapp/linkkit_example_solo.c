@@ -17,6 +17,9 @@
 #if defined(OTA_ENABLED)
 #include "ota_service.h"
 #endif
+
+#include "rfsmart_app.h"
+
 /*
  * please modify this string follow as product's TSL.
  */
@@ -31,7 +34,6 @@
 #define DEVICE_NAME     "rfsmartDevice"
 #define DEVICE_SECRET   "31gEDrsmC4NauQ9FHCYtMlRSr4w8D9j1"
 
-
 #define EXAMPLE_TRACE(fmt, ...)                        \
     do {                                               \
         HAL_Printf("%s|%03d :: ", __func__, __LINE__); \
@@ -39,13 +41,14 @@
         HAL_Printf("%s", "\r\n");                      \
     } while (0)
 
+#if 0
 typedef struct _sample_context {
     const void *thing;
     int         cloud_connected;
     int         local_connected;
     int         thing_enabled;
 } sample_context_t;
-
+#endif
 
 /*
  * the callback of linkkit_post_property.
@@ -55,7 +58,7 @@ typedef struct _sample_context {
 void post_property_cb(const void *thing_id, int response_id, int code,
                       const char *response_message, void *ctx)
 {
-    EXAMPLE_TRACE("thing@%p: response arrived:\nid:%d\tcode:%d\tmessage:%s\n",
+    EXAMPLE_TRACE("====>thing@%p: response arrived:id:%d\tcode:%d\tmessage:%s\n",
                   thing_id, response_id, code,
                   response_message == NULL ? "NULL" : response_message);
 
@@ -175,7 +178,8 @@ static int thing_create(const void *thing_id, void *ctx)
     /* ............................... */
 
     /* user's thing create process logical complete */
-
+    RfsmartSampleCtx = ctx;
+    RfsmartSampleCtx->thing = thing_id;
     return 0;
 }
 
@@ -471,43 +475,49 @@ static int thing_prop_changed(const void *thing_id, const char *property,
  * the handler of property changed
  * alink method: thing.service.property.set
  */
-static int thing_prop_changed(const void *thing_id, const char *property,
-                              void *ctx)
+extern char TempPassValue[64];
+extern int VolumeValue;
+static int thing_prop_changed(const void *thing_id, const char *property, void *ctx)
 {
-    /* do user's property changed process logical here. */
+    int SetValue = 0;
+    char *value_str = NULL;
+    int response_id = -1;
 
-    /* ............................... */
-
-    /* user's property changed process logical complete */
-
-
-    /*
-     * example:
-     *     property identifier:
-     *               IndoorTemperature
-     *               TemperatureModelStatus
-     *               CurrentTemperature
-     *
-     * please follow TSL modify this property identifier
-     */
-
-    /* if the proprety id is %s.%s, please follow this code */
-    /* get new property value */
-
-    int SetValue;
-    char *value_str        = NULL;
-    int   response_id      = -1;
-
-    linkkit_get_value(linkkit_method_get_property_value, thing_id, property, &SetValue, &value_str);
-    if (value_str) {
-        free(value_str);
-        value_str = NULL;
+    if(strcmp(property, TempPassPROPID) == 0){
+        linkkit_get_value(linkkit_method_get_property_value, thing_id, property, NULL, &value_str);
+        if(value_str){
+            memset(TempPassValue, 0x00, sizeof(TempPassValue));
+            memcpy(TempPassValue, value_str, strlen(value_str));
+            free(value_str);
+            value_str = NULL;
+            printf("get string value: <%s> set to %s\n", property, TempPassValue);
+        }
+    }else if(strcmp(property, VolumePROPID) == 0){
+        linkkit_get_value(linkkit_method_get_property_value, thing_id, property, &SetValue, NULL);
+        if (value_str){
+            free(value_str);
+            value_str = NULL;
+        }
+        VolumeValue = SetValue;
+        printf("get int value: <%s> set to %d\n", property, VolumeValue);
+    }else{
+        linkkit_get_value(linkkit_method_get_property_value, thing_id, property, &SetValue, NULL);
+        if (value_str){
+            free(value_str);
+            value_str = NULL;
+        }
+        printf("other: <%s> set to %d\n", property, SetValue);
     }
+
+    /* 属性值回传 */
     response_id = linkkit_post_property(thing_id, property, post_property_cb);
+    if(response_id != 0){
+        printf("Error: thing_prop_changed, but post this property faild.\n");
+        return response_id;
+    }
+    printf("post property(%s) response id: %d\n", property, response_id);
 
-    EXAMPLE_TRACE("post property(%s) response id: %d\n", property, response_id);
-    EXAMPLE_TRACE("huangjituan=======>%s set to %d\n", property, SetValue);
-
+    return 0;
 }
 
 
@@ -694,6 +704,8 @@ int trigger_deviceinfo(sample_context_t *sample)
 
 int linkkit_example()
 {
+    int wifiinfo_ispush = 0;
+    int option = 1;     /* add by huangjituan */
     sample_context_t sample_ctx = { 0 };
     // int execution_time = 20;
     int                exit     = 0;
@@ -716,6 +728,9 @@ int linkkit_example()
     };
 
     EXAMPLE_TRACE("linkkit start");
+
+    linkkit_set_opt(linkkit_opt_property_post_reply, &option);    /* add by huangjituan */
+    linkkit_set_opt(linkkit_opt_event_post_reply, &option);    /* add by huangjituan */
 
     /*
      * linkkit start
@@ -771,6 +786,35 @@ int linkkit_example()
         /* if (now % 10 == 0) {
             linkkit_invoke_cota_get_config("product","file","",NULL);
         } */
+
+        #if 0   /* 测试程序 */
+        #ifdef TESTALLPROP   /* 测试属性上传性能的代码 */
+        if (now % 14== 0) {
+            //testrfsmartintapp();
+            //testrfsmartemunapp();
+            //testrfsmartstringapp();
+        }
+        #endif
+
+        #ifdef TESTALLEVENT
+        if ((now % 10 == 0) && (now < 35)) {
+            //testrfsmarteventapp();
+        }
+        #endif
+
+        if(now % 10 == 0){
+            //UnbindDeviceClearWifi();
+            //ClearWifiAPConfig();
+            //InitAllYunProp();
+            //GetCurTime();
+        }
+        #endif
+
+        /* 设备联网时推送一次WiFi的信息到云端 */
+        if((now % 15 == 0) && (wifiinfo_ispush == 0)){
+            PushGetWifiInfo();
+            wifiinfo_ispush = 1;
+        }
 
 #if 0
 #ifdef POST_WIFI_STATUS

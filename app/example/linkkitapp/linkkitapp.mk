@@ -28,6 +28,8 @@ ifneq ($(newapi),)
 $(NAME)_SOURCES += newapi/solo.c 
 else
 $(NAME)_SOURCES += linkkit_example_solo.c 
+$(NAME)_SOURCES += rfsmart_app.c
+$(NAME)_SOURCES += rfsmart_time.c
 GLOBAL_DEFINES += DEPRECATED_LINKKIT 
 endif
 endif

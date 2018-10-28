@@ -1,0 +1,7 @@
+{
+    "aliosStudio.inner.yosBin": "aos",
+    "aliosStudio.hardware.board": "amebaz_dev",
+    "aliosStudio.name": "linkkitapp",
+    "aliosStudio.isAosSource": true,
+    "aliosStudio.sdkPath": "${workspaceRoot}"
+}

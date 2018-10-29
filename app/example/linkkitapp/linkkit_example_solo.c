@@ -19,6 +19,8 @@
 #endif
 
 #include "rfsmart_app.h"
+#include <k_api.h>
+#include"rfsmart_time.h"
 
 /*
  * please modify this string follow as product's TSL.
@@ -477,13 +479,49 @@ static int thing_prop_changed(const void *thing_id, const char *property,
  */
 extern char TempPassValue[64];
 extern int VolumeValue;
+
+//两个字符两个字符组成一个字节
+static void strtohex(unsigned char *Des, unsigned char *Src, unsigned short Len)
+{
+
+ 	int value[2] = {0};
+	int i;
+
+    if(Len > 61){
+        printf("=====>Error: strtohex, String data is to lenght.\n");
+    }
+
+	for(i = 0; i < Len*2; i++)
+	{
+		if(*Src >= '0' && *Src <= '9'){
+			value[i%2] = *Src - '0';
+		}else if(*Src >= 'a' && *Src <= 'f'){
+			value[i%2] = *Src - 'a' + 10;
+		}else if(*Src >= 'A' && *Src <= 'F'){
+			value[i%2] = *Src - 'A' + 10;
+		}else{
+			break;	//不是有效的数据，或者数据已经接收完成了，退出
+		}
+
+		if((i%2) == 1){
+			Des[i/2] = value[0]*16 + value[1];
+			value[0] = '\0';
+			value[1] = '\0';
+		}
+		Src++;
+	}
+}
+
 static int thing_prop_changed(const void *thing_id, const char *property, void *ctx)
 {
     int SetValue = 0;
     char *value_str = NULL;
     int response_id = -1;
+    unsigned char TempPassValueInHex[32];
+    unsigned char cmd;
+    unsigned char sendlen;
 
-    if(strcmp(property, TempPassPROPID) == 0){
+    if(strcmp(property, TempPassPROPID) == 0){      /* 处理临时密码 */
         linkkit_get_value(linkkit_method_get_property_value, thing_id, property, NULL, &value_str);
         if(value_str){
             memset(TempPassValue, 0x00, sizeof(TempPassValue));
@@ -491,8 +529,14 @@ static int thing_prop_changed(const void *thing_id, const char *property, void *
             free(value_str);
             value_str = NULL;
             printf("get string value: <%s> set to %s\n", property, TempPassValue);
+            /* 把字符串转换成16进制 */
+            memset(TempPassValueInHex, 0x00, 32);
+            strtohex(TempPassValueInHex, TempPassValue, strlen(TempPassValue));
+            cmd = TEMPPAWSS_CMD_RET;
+            sendlen = strlen(TempPassValue)/2;
+            UartSendFormData(cmd, TempPassValueInHex, sendlen);
         }
-    }else if(strcmp(property, VolumePROPID) == 0){
+    }else if(strcmp(property, VolumePROPID) == 0){  /* 处理声音音量 */
         linkkit_get_value(linkkit_method_get_property_value, thing_id, property, &SetValue, NULL);
         if (value_str){
             free(value_str);
@@ -500,7 +544,7 @@ static int thing_prop_changed(const void *thing_id, const char *property, void *
         }
         VolumeValue = SetValue;
         printf("get int value: <%s> set to %d\n", property, VolumeValue);
-    }else{
+    }else{      /* 处理其他的属性 */
         linkkit_get_value(linkkit_method_get_property_value, thing_id, property, &SetValue, NULL);
         if (value_str){
             free(value_str);
@@ -815,7 +859,6 @@ int linkkit_example()
             PushGetWifiInfo();
             wifiinfo_ispush = 1;
         }
-
 #if 0
 #ifdef POST_WIFI_STATUS
         if (now % 10 == 0) {

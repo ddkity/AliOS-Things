@@ -3,6 +3,7 @@
 #include <aos/kernel.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include "hal/soc/soc.h"
 
 #include"rfsmart_time.h"
@@ -79,35 +80,381 @@ void rflocaltime(unsigned int time,struct rftm *t)
     t->tm_mday = (int)(time);
     return;
 }
+
+
+ksem_t g_uart_sem;
+void RfsmartInit(void)
+{
+    /* 初始化信号量 */
+    krhino_sem_create(&g_uart_sem, "uart_sem", 0);
+}
+
+
 /***********************************************************************
 *   以下为串口相关的处理函数
 ***********************************************************************/
-/*
+
+
+/************串口通信命令宏定义***************/
+#define UARTNOP     (0)         /* 串口接收错误或者空闲 */
+#define UARTSOP     (1)         /* 接收起始位 */
+#define UARTDEVTYPE (2)         /* 设备类型 */
+#define UARTRES1    (3)         /* 保留字段1 */
+#define UARTRES2    (4)         /* 保留字段2 */
+#define UARTRES3    (5)         /* 保留字段3 */
+#define UARTRES4    (6)         /* 保留字段4 */
+#define UARTCMD     (7)         /* 命令代码 */
+#define UARTDATALEN (8)         /* 消息长度 */
+#define UARTDATA    (9)         /* 消息体 */
+#define UARTCRC     (10)        /* 校验和 */
+
+//串口帧结构定义
+#define F_HEAD              (0xBB)	    /* 帧头 */
+#define F_HEAD_RET          (0xCC)      /* WIFI返回设备的帧头 */
+#define RECVMAXLEN          (128)       /* 串口接收的buffer */
+#define SENDMAXLEN          (128)       /* 串口接收的buffer */
+#define DEVICEMODETYPE      (0x10)      /* 设备类型，智能锁的类型为0x10 */
+#define RESERVE1            (0x00)      /* 保留字段值 */
+#define RESERVE2            (0x00)      /* 保留字段值 */
+#define RESERVE3            (0x00)      /* 保留字段值 */
+#define RESERVE4            (0x00)      /* 保留字段值 */
+
+/* 测试串口数据: bb 10 00 00 00 00 01 0d aa bb cc dd 19 */
+
+unsigned char UartStatus = UARTNOP;     /* 接收状态机 */
+unsigned char UartRxOkFlag = 0;         /* 接收完成标志 */
+unsigned char RecvBuffer[RECVMAXLEN] = {0}; /* 接收buffer */
+unsigned char UartRecvLen = 0;          /* 接收到的数据长度 */
+unsigned char UartDataLen = 0;         /* 接收的数据段的长度 */
+unsigned char CalCRC = 0;	/* 计算出来的CRC数据 */
+unsigned char RecvCRC = 0;	/* 接收到的CRC数据 */
+
 extern uart_dev_t uart_1;
+
+void InitAllUartValue(void)
+{
+    UartStatus = UARTNOP;
+    UartRxOkFlag = 0;
+    memset(RecvBuffer, 0x00, RECVMAXLEN);
+    UartRecvLen = 0;
+    UartDataLen = 0;
+    CalCRC = 0;
+    RecvCRC = 0;
+}
+
+/*******************************************
+*   串口发送数据接口
+*   SENDCMD: 需要发送的命令
+*   SendData:   需要发送的消息体
+*   Len: 需要发送的消息体的长度，即是SendData的长度
+*******************************************/
+void UartSendFormData(unsigned char SendCMD, const unsigned char *SendData, unsigned char Len)
+{
+    int i;
+    unsigned int SendTimeout = 0;
+    unsigned char SendBuffer[SENDMAXLEN] = {0};
+    unsigned char SendDataLen = 0;
+    unsigned char SendCRC = 0;
+
+    memset(SendBuffer, 0x00, SENDMAXLEN);
+    SendTimeout = 300;  /* 发送超时 */
+
+    SendBuffer[SendDataLen++] = F_HEAD_RET;         /* 帧头 */
+    SendCRC += SendBuffer[SendDataLen - 1];
+
+    SendBuffer[SendDataLen++] = DEVICEMODETYPE;     /* 设备类型 */
+    SendCRC += SendBuffer[SendDataLen - 1];
+
+    SendBuffer[SendDataLen++] = RESERVE1;           /* 保留字段 */
+    SendCRC += SendBuffer[SendDataLen - 1];
+
+    SendBuffer[SendDataLen++] = RESERVE2;
+    SendCRC += SendBuffer[SendDataLen - 1];
+
+    SendBuffer[SendDataLen++] = RESERVE3;
+    SendCRC += SendBuffer[SendDataLen - 1];
+
+    SendBuffer[SendDataLen++] = RESERVE4;
+    SendCRC += SendBuffer[SendDataLen - 1];
+
+    SendBuffer[SendDataLen++] = SendCMD;        /* 命令代码 */
+    SendCRC += SendBuffer[SendDataLen - 1];
+
+    SendBuffer[SendDataLen++] = Len;            /* 消息体的长度 */
+    SendCRC += SendBuffer[SendDataLen - 1];
+
+    for(i = 0; i < Len; i++){
+        SendBuffer[SendDataLen++] = SendData[i];
+        SendCRC += SendBuffer[SendDataLen - 1];
+    }
+
+    SendCRC = 0 - SendCRC;
+
+    SendBuffer[SendDataLen++] = SendCRC;
+
+
+    printf("SendData:");
+    for(i = 0; i < SendDataLen; i++){
+        printf("%02x ", SendBuffer[i]);
+    }
+    printf("\n");
+
+    hal_uart_send(&uart_1, SendBuffer, SendDataLen, SendTimeout);
+
+}
+
+
+/* 串口接收数据处理，传进来的数据包括帧头帧尾的一整帧数据 */
+void ProtocalUartData(unsigned char *Data, unsigned char Length)
+{
+    int i;
+    unsigned char CMD = 0x00;
+
+    /* 开门记录变量相关变量 */
+    int EvenRecordID;
+    int EvenLockType;
+    char* EvenKeyID;
+    unsigned char *AlarmTime;
+    int EvenBatteryValue;
+    /***********************/
+
+    /* 报警推送相关变量 */
+    int AlarmType;
+    int HijackKeyID;
+    //unsigned char *AlarmTime;
+    //int EvenBatteryValue;
+    /***********************/
+
+
+    printf("RecvData:");
+    for(i = 0; i < Length; i++){
+        printf("%02x ", Data[i]);
+    }
+    printf("\n");
+
+    CMD = Data[6];
+
+    switch(CMD)
+    {
+        case INITYUNDATA_CMD:
+            InitAllYunProp();
+            break;
+
+        case SETWIFINETWORK_CMD:
+            WIFISetNetwork();
+            break;
+
+        case CLEARWIFICONFIG_CMD:
+            ClearWifiAPConfig();
+            break;
+
+        case SYNCCURTIME_CMD:
+            GetCurTime();
+            break;
+
+        case CHECKWIFISTATUS_CMD:
+            GetWifiStatus();
+            break;
+
+        case DOOROPENRECORD_CMD:
+            EvenRecordID = Data[0];     /* 记录ID */
+            EvenLockType = Data[1];     /* 开锁方式 */
+            sprintf(EvenKeyID,"%d",Data[2]);                  /* 钥匙ID */
+            AlarmTime = &Data[3];                  /* 开锁时间 */
+            EvenBatteryValue = Data[9];           /* 电池电量 */
+
+            trigger_DoorOpenNotific_event(EvenRecordID, EvenLockType, EvenKeyID, AlarmTime, EvenBatteryValue);
+            break;
+
+        case PUSHALARM_CMD:
+            AlarmType = Data[0];
+            HijackKeyID = Data[1];
+            AlarmTime = &Data[2];
+            EvenBatteryValue = Data[8];
+            trigger_PushAlarm_event(AlarmType, HijackKeyID, AlarmTime, EvenBatteryValue);
+            break;
+
+        case DOORLOCKINFO_CMD:
+            if(Length == 26){   /* 数据够长才能处理 */
+                trigger_PushDoorLockInfo_event(&Data[0]);
+            }else{
+                printf("=====>Error: uart Recv Data maybe error, check it.....\n");
+            }
+            break;
+
+        case TEMPPAWSS_CMD:
+            /* TODO 作为接收到的设备端返回的应答，可以不做处理 */
+            break;
+
+        default:
+            printf("====>Error: unkonw CMD\n");
+            break;
+    }
+}
+
+void UartRecvDataHandler(unsigned char RecvChar)
+{
+    switch(UartStatus)
+    {
+        case UARTNOP:
+        {
+            if(UartRxOkFlag){
+				break;
+			}else{
+				UartStatus = UARTSOP;
+			}
+        }
+
+        case UARTSOP:
+        {
+            if(RecvChar == F_HEAD){
+                RecvBuffer[UartRecvLen++] = RecvChar;
+                CalCRC += RecvChar;
+				UartStatus = UARTDEVTYPE;
+            }else{
+                UartStatus = UARTNOP;
+            }
+            break;
+        }
+
+        case UARTDEVTYPE:
+        {
+            RecvBuffer[UartRecvLen++] = RecvChar;
+
+            if(DEVICEMODETYPE != RecvChar){     /* 判断设备类型是否是锁具，如果不是智能锁不做处理 */
+                InitAllUartValue();
+                break;
+            }
+            CalCRC += RecvChar;
+			UartStatus = UARTRES1;
+            break;
+        }
+
+        case UARTRES1:
+        {
+            RecvBuffer[UartRecvLen++] = RecvChar;
+            CalCRC += RecvChar;
+			UartStatus = UARTRES2;
+            break;
+        }
+
+        case UARTRES2:
+        {
+            RecvBuffer[UartRecvLen++] = RecvChar;
+            CalCRC += RecvChar;
+			UartStatus = UARTRES3;
+            break;
+        }
+
+        case UARTRES3:
+        {
+            RecvBuffer[UartRecvLen++] = RecvChar;
+            CalCRC += RecvChar;
+			UartStatus = UARTRES4;
+            break;
+        }
+
+        case UARTRES4:
+        {
+            RecvBuffer[UartRecvLen++] = RecvChar;
+            CalCRC += RecvChar;
+			UartStatus = UARTCMD;
+            break;
+        }
+
+        case UARTCMD:
+        {
+            RecvBuffer[UartRecvLen++] = RecvChar;
+            CalCRC += RecvChar;
+			UartStatus = UARTDATALEN;
+            break;
+        }
+
+        case UARTDATALEN:
+        {
+            RecvBuffer[UartRecvLen++] = RecvChar;
+            CalCRC += RecvChar;
+            UartDataLen = RecvChar;
+			UartStatus = UARTDATA;
+            break;
+        }
+
+        case UARTDATA:
+		{
+			if(UartDataLen > 0)
+			{
+				RecvBuffer[UartRecvLen++] = RecvChar;
+                CalCRC += RecvChar;
+				UartDataLen--;
+				break;
+			}
+			else{
+				UartStatus = UARTCRC;
+			}
+		}
+
+        case UARTCRC:
+        {
+            RecvBuffer[UartRecvLen++] = RecvChar;
+            CalCRC = 0 - CalCRC;
+            RecvCRC = RecvChar;
+
+            if(CalCRC == RecvCRC){
+                UartRxOkFlag = 0x01;
+                /* 业务处理函数 */
+                ProtocalUartData(RecvBuffer, UartRecvLen);
+            }else{
+                printf("====>Error: Recv Data is illegal, CalCRC:%02x, RecvCRC:%02x\n", CalCRC, RecvCRC);
+            }
+
+            /* 初始化所有的串口变量 */
+            InitAllUartValue();
+			break;
+        }
+
+    }
+}
+
+/* 串口处理线程 */
 void uarthandler_func(void)
 {
-    int ret = -1;
+    int ret;
 
-    unsigned char RecvData[64];
-    unsigned char SendData[64];
+    unsigned char RecvCharTemp = 0x00;
     unsigned int expect_size = 1;
     unsigned int recv_size = 0;
-    unsigned int timeout = 10;
+    unsigned int timeout = 1;
 
-    while(1){
-        memset(RecvData, 0x00, 64);
-        memset(SendData, 0x00, 64);
-        recv_size = 0;
-        ret = -1;
+    while(1)
+    {
+        //krhino_task_sleep(1000);
+        //hal_uart_send(&uart_1, &SendData, recv_size, timeout);
+        ret = krhino_sem_take(&g_uart_sem, RHINO_WAIT_FOREVER);
+        if(ret != RHINO_SUCCESS){
+            printf("=====>take the sem failed.\n\n");
+        }
 
-        ret = hal_uart_recv_II(&uart_1, RecvData, expect_size, &recv_size, timeout);
+        ret = hal_uart_recv_II(&uart_1, &RecvCharTemp, expect_size, &recv_size, timeout);
         if(ret == 0){
-            memcpy(SendData, RecvData, recv_size);
-            hal_uart_send(&uart_1, SendData, recv_size, timeout);
+            UartRecvDataHandler(RecvCharTemp);
+            RecvCharTemp = 0x00;
+        }else{
+            printf("=====>WARING:   recv uart data maybe error.\n\n");
         }
     }
 }
-*/
+
+
+
+
+
+
+
+
+
+
+
+
 
 #if 0
 static time_t mon_yday[2][12] =

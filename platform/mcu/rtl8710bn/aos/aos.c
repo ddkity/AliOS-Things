@@ -156,14 +156,16 @@ void sys_init_func(void)
     krhino_task_dyn_del(NULL);
 }
 
-//ktask_t *g_uart1_init;
-//extern void uarthandler_func(void);
+ktask_t *g_uart1_init;
+extern void uarthandler_func(void);
 void main(void)
 {
     aos_init();
 
+    RfsmartInit();
+
     krhino_task_dyn_create(&g_aos_init, "aos-init", 0, AOS_DEFAULT_APP_PRI , 0, AOS_START_STACK, (task_entry_t)sys_init_func, 1);
-    //krhino_task_dyn_create(&g_uart1_init, "g_uart1_init", 0, AOS_DEFAULT_APP_PRI , 0, 1024, (task_entry_t)uarthandler_func, 1);
+    krhino_task_dyn_create(&g_uart1_init, "g_uart1_init", 0, AOS_DEFAULT_APP_PRI , 0, 1024, (task_entry_t)uarthandler_func, 1);
 
     SysTick_Config(SystemCoreClock/RHINO_CONFIG_TICKS_PER_SECOND);
 

@@ -53,6 +53,10 @@ void ntp_reply(const char *ntp_offset_time_ms)
     char ntptimestr[11];
     struct rftm t;
 
+    unsigned char cmd;
+    unsigned char senddata[6];
+    unsigned char sendlen;
+
     memset(ntptimestr, 0x00, 11);
     memcpy(ntptimestr, ntp_offset_time_ms, 10);
     utc_time = atoi(ntptimestr);
@@ -60,11 +64,26 @@ void ntp_reply(const char *ntp_offset_time_ms)
     rflocaltime(local_time,&t);
     printf("======>Info: %04d-%02d-%02d %02d:%02d:%02d\r\n",t.tm_year,t.tm_mon+1,t.tm_mday,t.tm_hour,t.tm_min,t.tm_sec);
     /* TODO 把年月日和时分秒通过串口发送给锁具 */
+    cmd = SYNCCURTIME_CMD_RET;
+    sendlen = 6;
+    senddata[0] = t.tm_year - 2000;
+    senddata[1] = t.tm_mon+1;
+    senddata[2] = t.tm_mday;
+    senddata[3] = t.tm_hour;
+    senddata[4] = t.tm_min;
+    senddata[5] = t.tm_sec;
+    UartSendFormData(cmd, senddata, sendlen);
 }
 
 void GetCurTime(void)
 {
-    linkkit_ntp_time_request(ntp_reply);
+    int ret;
+
+    ret = linkkit_ntp_time_request(ntp_reply);
+    if(0 != ret){
+        /* 获取时间失败 */
+        printf("=====>Error: get currnt time failed.\n");
+    }
 }
 
 /**********************************
@@ -255,8 +274,16 @@ void InitAllYunProp(void)
 unsigned char CurWiFiStatus = 0x00;
 void GetWifiStatus(void)
 {
+    unsigned char cmd;
+    unsigned char senddata;
+    unsigned char sendlen;
+
     printf("======>Info: GetWifiStatus is %d\n", CurWiFiStatus);
     /* TODO 把CurWiFiStatus的状态发给锁具 */
+    cmd = CHECKWIFISTATUS_CMD_RET;
+    senddata = CurWiFiStatus;
+    sendlen = 1;
+    UartSendFormData(cmd, &senddata, sendlen);
 }
 
 /*********************************************************************
@@ -265,13 +292,24 @@ void GetWifiStatus(void)
 unsigned char WIFISetNetworkFlash = 0;
 void WIFISetNetwork(void)
 {
+    unsigned char cmd;
+    unsigned char senddata;
+    unsigned char sendlen;
     printf("======>Info: WIFI Set Network Start\n");
     WIFISetNetworkFlash = 0;
     do_awss_active();
+    cmd = SETWIFINETWORK_CMD_RET;
+    sendlen = 0x01;
+    /* 是否需要延时等一下准备好了再发送? */
     if(WIFISetNetworkFlash == 1){
         /* TODO 通过linkkit_event_monitor函数的事件回调函数查看是否进入配网模式成功，然后
         通过串口把进入配网模式的结果返回给设备 */
+        senddata = 0x00;
+        UartSendFormData(cmd, &senddata, sendlen);
         WIFISetNetworkFlash = 0;
+    }else{
+        senddata = 0x01;
+        UartSendFormData(cmd, &senddata, sendlen);
     }
 }
 
@@ -300,21 +338,30 @@ void UnbindDeviceClearWifi(void)
 **********************************************************************/
 void ClearWifiAPConfig(void)
 {
+    unsigned char cmd;
+    unsigned char senddata;
+    unsigned char sendlen;
+
     printf("======>Info:ClearWifiAPConfig\n");
     netmgr_clear_ap_config();
     /* 清除完成之后串口把结果返回给设备，1秒后重启 */
     /* TODO */
+    cmd = CLEARWIFICONFIG_CMD_RET;
+    sendlen = 0x01;
+    senddata = 0x00;
+    UartSendFormData(cmd, &senddata, sendlen);
+
     HAL_SleepMs(1000);
     HAL_Sys_reboot();
 }
 
 /*****************************************
 *   开门记录信息推送
-*   EvenRecordID:记录ID
-*   EvenLockType:开锁方式
-*   EvenKeyID:钥匙ID
-*   AlarmTime:开锁时间  6字节
-*   EvenBatteryValue:电池电量
+*   EvenRecordID:记录ID     (整型)
+*   EvenLockType:开锁方式   (整型)
+*   EvenKeyID:钥匙ID        (字符串)
+*   AlarmTime:开锁时间  6字节   (数组)
+*   EvenBatteryValue:电池电量   (整型)
 *   成功返回0，失败返回非0
 ****************************************/
 int trigger_DoorOpenNotific_event(int EvenRecordID, int EvenLockType, char* EvenKeyID,
@@ -371,10 +418,10 @@ int trigger_DoorOpenNotific_event(int EvenRecordID, int EvenLockType, char* Even
 
 /***************************************************
 *   报警推送
-*   报警类型:   AlarmType   (1:防撬、2:禁试、3:低压、4:假锁、5:主动防御，6:劫持密码、7:劫持指纹)
-*   劫持钥匙ID: HijackKeyID (劫持报警有效，分别对应指纹ID或者密码ID，1个字节，非劫持报警下为0)
-*   报警时间:   AlarmTime
-*   锁具电量:   EvenBatteryValue    (范围0--100)
+*   报警类型:   AlarmType   (整型)(1:防撬、2:禁试、3:低压、4:假锁、5:主动防御，6:劫持密码、7:劫持指纹)
+*   劫持钥匙ID: HijackKeyID (整型)(劫持报警有效，分别对应指纹ID或者密码ID，1个字节，非劫持报警下为0)
+*   报警时间:   AlarmTime   (数组)
+*   锁具电量:   EvenBatteryValue (整型)   (范围0--100)
 ***************************************************/
 int trigger_PushAlarm_event(int AlarmType, int HijackKeyID, unsigned char *AlarmTime, int EvenBatteryValue)
 {

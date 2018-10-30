@@ -268,26 +268,26 @@ void ProtocalUartData(unsigned char *Data, unsigned char Length)
             break;
 
         case DOOROPENRECORD_CMD:
-            EvenRecordID = Data[0];     /* 记录ID */
-            EvenLockType = Data[1];     /* 开锁方式 */
-            sprintf(EvenKeyID,"%d",Data[2]);                  /* 钥匙ID */
-            AlarmTime = &Data[3];                  /* 开锁时间 */
-            EvenBatteryValue = Data[9];           /* 电池电量 */
+            EvenRecordID = Data[8];     /* 记录ID */
+            EvenLockType = Data[9];     /* 开锁方式 */
+            sprintf(EvenKeyID,"%d",Data[10]);                  /* 钥匙ID */
+            AlarmTime = &Data[11];                  /* 开锁时间 */
+            EvenBatteryValue = Data[17];           /* 电池电量 */
 
             trigger_DoorOpenNotific_event(EvenRecordID, EvenLockType, EvenKeyID, AlarmTime, EvenBatteryValue);
             break;
 
         case PUSHALARM_CMD:
-            AlarmType = Data[0];
-            HijackKeyID = Data[1];
-            AlarmTime = &Data[2];
-            EvenBatteryValue = Data[8];
+            AlarmType = Data[8];
+            HijackKeyID = Data[9];
+            AlarmTime = &Data[10];
+            EvenBatteryValue = Data[16];
             trigger_PushAlarm_event(AlarmType, HijackKeyID, AlarmTime, EvenBatteryValue);
             break;
 
         case DOORLOCKINFO_CMD:
             if(Length == 26){   /* 数据够长才能处理 */
-                trigger_PushDoorLockInfo_event(&Data[0]);
+                trigger_PushDoorLockInfo_event(&Data[8]);
             }else{
                 printf("=====>Error: uart Recv Data maybe error, check it.....\n");
             }
@@ -430,7 +430,8 @@ void UartRecvDataHandler(unsigned char RecvChar)
             }
 
             /* 初始化所有的串口变量 */
-            aos_timer_stop(&uart1_timer);
+            aos_timer_stop(&uart1_timer);   /* 停止定时器 */
+            aos_timer_free(&uart1_timer);   /* 释放定时器 */
             InitAllUartValue();
 			break;
         }

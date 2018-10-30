@@ -225,6 +225,9 @@ void ProtocalUartData(unsigned char *Data, unsigned char Length)
     //int EvenBatteryValue;
     /***********************/
 
+    unsigned char cmd;
+    unsigned char senddata;
+    unsigned char sendlen;
 
     printf("RecvData:");
     for(i = 0; i < Length; i++){
@@ -241,7 +244,15 @@ void ProtocalUartData(unsigned char *Data, unsigned char Length)
             break;
 
         case SETWIFINETWORK_CMD:
-            WIFISetNetwork();
+            if(Data[8] == 0x01){
+                WIFISetNetwork();
+            }else{
+                cmd = SETWIFINETWORK_CMD_RET;
+                sendlen = 0x01;
+                senddata = 0x01;
+                UartSendFormData(cmd, &senddata, sendlen);
+                printf("====>Error: uart recvdata is invalable.\n");
+            }
             break;
 
         case CLEARWIFICONFIG_CMD:
@@ -292,6 +303,14 @@ void ProtocalUartData(unsigned char *Data, unsigned char Length)
     }
 }
 
+aos_timer_t uart1_timer;
+void uart1_timer_func(void *arg1, void *arg2)
+{
+    InitAllUartValue();
+    printf("====>time is running ......\n");
+}
+
+/* 串口接收程序 */
 void UartRecvDataHandler(unsigned char RecvChar)
 {
     switch(UartStatus)
@@ -311,6 +330,9 @@ void UartRecvDataHandler(unsigned char RecvChar)
                 RecvBuffer[UartRecvLen++] = RecvChar;
                 CalCRC += RecvChar;
 				UartStatus = UARTDEVTYPE;
+
+                /* 开始接收了串口数据，启动一次定时器，100ms接收超时 */
+                aos_timer_new(&uart1_timer, uart1_timer_func, NULL, 100, 0);
             }else{
                 UartStatus = UARTNOP;
             }
@@ -408,6 +430,7 @@ void UartRecvDataHandler(unsigned char RecvChar)
             }
 
             /* 初始化所有的串口变量 */
+            aos_timer_stop(&uart1_timer);
             InitAllUartValue();
 			break;
         }

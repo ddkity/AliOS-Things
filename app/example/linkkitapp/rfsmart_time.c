@@ -286,7 +286,7 @@ void ProtocalUartData(unsigned char *Data, unsigned char Length)
             break;
 
         case DOORLOCKINFO_CMD:
-            if(Length == 26){   /* 数据够长才能处理 */
+            if(Length == 27){   /* 数据够长才能处理 */
                 trigger_PushDoorLockInfo_event(&Data[8]);
             }else{
                 printf("=====>Error: uart Recv Data maybe error, check it.....\n");
